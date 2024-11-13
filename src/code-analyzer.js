@@ -6,6 +6,7 @@ import { promises as fsPromises } from 'fs';
 import * as babelParser from '@babel/parser';
 import traverse from '@babel/traverse';
 import { parse as parseTypeScript } from '@typescript-eslint/parser';
+import progress from './progress-util.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -33,7 +34,7 @@ class CodeAnalyzer {
                     return this.analyzeGenericFile(content, filePath);
             }
         } catch (error) {
-            console.warn(`Warning: Could not analyze ${filePath}:`, error);
+            progress.warn(`Could not read ${filePath}: ${error.message}`);
             return {
                 imports: [],
                 exports: [],
@@ -156,7 +157,7 @@ class CodeAnalyzer {
 
             return analysis;
         } catch (error) {
-            console.warn(`Warning: Error parsing JavaScript ${filePath}:`, error);
+            progress.warn(`Error parsing JavaScript ${filePath}: ${error.message}`);
             return {
                 imports: [],
                 exports: [],
@@ -247,7 +248,7 @@ class CodeAnalyzer {
 
             return analysis;
         } catch (error) {
-            console.warn(`Warning: Error parsing TypeScript ${filePath}:`, error);
+            progress.warn(`Error parsing TypeScript ${filePath}: ${error.message}`);
             return {
                 imports: [],
                 exports: [],
@@ -320,7 +321,7 @@ class CodeAnalyzer {
                     }
                 }
             } catch (e) {
-                console.warn(`Warning: Error resolving dependencies for ${filePath}:`, e);
+                progress.warn(`Error resolving dependencies for ${filePath}: ${e.message}`);
             }
         }
 

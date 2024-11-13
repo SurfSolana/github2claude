@@ -1,8 +1,32 @@
 {
-  "name": "codebase-mapper",
+  "name": "github2claude",
   "version": "1.0.0",
+  "description": "Generate LLM-optimized markdown documentation from GitHub repositories for use with Claude AI",
   "type": "module",
-  "main": "index.js",
+  "main": "src/index.js",
+  "bin": {
+    "github2claude": "./cli.js"
+  },
+  "files": [
+    "cli.js",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node cli.js"
+  },
+  "keywords": [
+    "github",
+    "claude",
+    "anthropic",
+    "documentation",
+    "code-analysis",
+    "llm",
+    "ai"
+  ],
+  "author": "SurfSolana",
+  "license": "MIT",
   "dependencies": {
     "@babel/parser": "^7.23.0",
     "@babel/traverse": "^7.23.0",
@@ -13,5 +37,13 @@
   },
   "engines": {
     "node": ">=16"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SurfSolana/github-to-claude.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SurfSolana/github-to-claude/issues"
+  },
+  "homepage": "https://github.com/SurfSolana/github-to-claude#readme"
 }

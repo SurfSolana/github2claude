@@ -1,7 +1,7 @@
 // src/markdown-generator.js
 import fs from 'fs/promises';
 import path from 'path';
-import chalk from 'chalk';
+import progress from './progress-util.js';
 
 class MarkdownGenerator {
     constructor(repoName, basePath) {
@@ -12,97 +12,68 @@ class MarkdownGenerator {
         this.componentMap = new Map();
     }
 
-    async generateMarkdown(files, analyses, dependencyGraph) {
+    async generateSections(files, analyses, dependencyGraph) {
+        const sections = [];
+
         try {
-            this.addHeader();
-            await this.addProjectOverview();
-            await this.generateDirectoryTree('');
-            await this.addArchitectureSection(analyses, dependencyGraph);
-            await this.addCodeSections(files, analyses, dependencyGraph);
-            return this.content.join('\n\n');
+            // Add overview section
+            progress.addSubtask('Generating overview');
+            sections.push(await this.generateOverviewSection());
+            progress.completeSubtask('Generating overview');
+
+            // Add architecture section
+            progress.addSubtask('Analyzing architecture');
+            sections.push(await this.generateArchitectureSection(analyses, dependencyGraph));
+            progress.completeSubtask('Analyzing architecture');
+
+            // Group files by directory
+            const filesByDirectory = this.groupFilesByDirectory(files);
+
+            // Generate sections for each directory
+            progress.addSubtask('Processing directories');
+            let dirCount = 0;
+            for (const [directory, directoryFiles] of filesByDirectory) {
+                progress.update('Processing directories', ++dirCount, filesByDirectory.size);
+                sections.push(await this.generateDirectorySection(directory, directoryFiles, analyses, dependencyGraph));
+            }
+            progress.completeSubtask('Processing directories');
+
+            return sections;
         } catch (error) {
-            console.error(chalk.red('Error generating markdown:'), error);
+            progress.error(`Error generating sections: ${error.message}`);
             throw error;
         }
     }
 
-    addHeader() {
-        this.content.push(`# ${this.repoName} Codebase Map
+    async generateOverviewSection() {
+        return `# ${this.repoName} Code Documentation
 
-<codebase_metadata>
+<repository_overview>
 Repository Name: ${this.repoName}
 Analysis Date: ${new Date().toISOString()}
-Analysis Type: LLM-Optimized Code Map
-</codebase_metadata>
-`);
+Analysis Type: LLM-Optimized Documentation
+
+## Purpose
+This documentation is organized to provide a clear understanding of the codebase structure, 
+relationships between components, and implementation details. Each section is sized 
+appropriately for processing with Large Language Models like Claude.
+
+## Documentation Structure
+- Overview and Introduction
+- Architecture and Dependencies
+- Directory-based Code Analysis
+- Component Relationships
+- Implementation Details
+</repository_overview>
+`;
     }
 
-    async addProjectOverview() {
-        try {
-            const entryPoints = await this.findEntryPoints();
-            const languages = await this.detectLanguages();
-            const mainComponents = await this.identifyMainComponents();
+    async generateArchitectureSection(analyses, dependencyGraph) {
+        const components = await this.identifyMainComponents(analyses);
+        const flows = await this.analyzeDataFlows(dependencyGraph);
+        const dependencies = await this.analyzeKeyDependencies(dependencyGraph);
 
-            this.content.push(`## Project Overview
-
-<project_structure>
-Primary Languages: ${languages.join(', ')}
-Entry Points: ${entryPoints.map(ep => `\`${ep}\``).join(', ')}
-Main Components: ${mainComponents.map(comp => `\`${comp}\``).join(', ')}
-
-### Architectural Summary
-This codebase map is organized to provide a clear understanding of:
-1. Directory structure and file organization
-2. Component relationships and dependencies
-3. Core functionality and business logic
-4. Entry points and data flow
-</project_structure>
-`);
-        } catch (error) {
-            console.warn(chalk.yellow('Warning: Error generating project overview:'), error);
-            // Add a basic overview if detailed analysis fails
-            this.content.push(`## Project Overview\n\nBasic repository analysis for ${this.repoName}\n`);
-        }
-    }
-
-    async generateDirectoryTree(currentPath) {
-        try {
-            const fullPath = path.join(this.basePath, currentPath);
-            const entries = await fs.readdir(fullPath, { withFileTypes: true });
-            let prefix = currentPath === '' ? '' : '  '.repeat(currentPath.split('/').length);
-
-            for (const entry of entries) {
-                if (this.shouldIgnore(entry.name)) continue;
-
-                if (entry.isDirectory()) {
-                    this.treeContent.push(`${prefix}${entry.name}/`);
-                    await this.generateDirectoryTree(path.join(currentPath, entry.name));
-                } else {
-                    this.treeContent.push(`${prefix}${entry.name}`);
-                }
-            }
-
-            if (currentPath === '') {
-                this.content.push(`## Directory Structure
-
-<directory_structure>
-\`\`\`
-${this.treeContent.join('\n')}
-\`\`\`
-</directory_structure>
-`);
-            }
-        } catch (error) {
-            console.warn(chalk.yellow('Warning: Error generating directory tree:'), error);
-        }
-    }
-
-    async addArchitectureSection(analyses, dependencyGraph) {
-        try {
-            const components = await this.identifyMainComponents(analyses);
-            const flows = await this.analyzeDataFlows(dependencyGraph);
-
-            this.content.push(`## Architecture Overview
+        return `## Architecture Overview
 
 <architecture_analysis>
 ### Core Components
@@ -112,64 +83,97 @@ ${components.map(comp => `- ${comp.name}: ${comp.description}`).join('\n')}
 ${flows.map(flow => `- ${flow}`).join('\n')}
 
 ### Key Dependencies
-${await this.analyzeKeyDependencies(dependencyGraph)}
+${dependencies}
 </architecture_analysis>
-`);
-        } catch (error) {
-            console.warn(chalk.yellow('Warning: Error generating architecture section:'), error);
-        }
+`;
     }
 
-    async addCodeSections(files, analyses, dependencyGraph) {
-        this.content.push('## Code Components\n');
+    async generateDirectorySection(directory, files, analyses, dependencyGraph) {
+        const relativePath = path.relative(this.basePath, directory);
+        let section = `## Directory: ${relativePath || 'Root'}
+
+<directory_analysis>
+This directory contains ${files.length} file(s).\n\n`;
 
         for (const file of files) {
-            try {
-                const relativePath = path.relative(this.basePath, file);
-                const analysis = analyses.get(file);
-                const deps = dependencyGraph.get(file);
-
-                if (!analysis) continue;
-
-                const section = await this.formatCodeSection(relativePath, analysis, deps);
-                this.content.push(section);
-            } catch (error) {
-                console.warn(chalk.yellow(`Warning: Error processing file ${file}:`), error);
+            const analysis = analyses.get(file);
+            const deps = dependencyGraph.get(file);
+            if (analysis) {
+                section += await this.formatFileSection(file, analysis, deps);
             }
         }
+
+        section += '</directory_analysis>';
+        return section;
     }
 
-    async formatCodeSection(filePath, analysis, deps) {
-        const fileContent = analysis.content;
+    async generateIndex(sections, repoFullName) {
+        return `# ${repoFullName} Documentation Index
+
+<documentation_index>
+## Overview
+This documentation is split into ${sections.length} files for optimal processing with AI models.
+
+## Files
+${sections.map((section, index) => {
+    const titleMatch = section.match(/^## [^#\n]*/m);
+    const title = titleMatch ? titleMatch[0].replace('## ', '').trim() : `Part ${index + 1}`;
+    const sanitizedTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return `${index + 1}. ${sanitizedTitle}.md - ${title}`;
+}).join('\n')}
+
+## Usage Guide
+1. Start with this index file to understand the documentation structure
+2. Each file contains a logical section of the codebase:
+   ${sections.map((section, index) => {
+       const titleMatch = section.match(/^## [^#\n]*/m);
+       const title = titleMatch ? titleMatch[0].replace('## ', '').trim() : `Part ${index + 1}`;
+       return `\n   - ${title}`;
+   }).join('')}
+3. Files are sized appropriately for AI processing
+4. Cross-references between files are maintained using relative links
+
+## Documentation Features
+- Comprehensive code analysis
+- Dependency mapping
+- Component relationships
+- Implementation details
+- Directory-based organization
+</documentation_index>
+`;
+    }
+
+    async formatFileSection(filePath, analysis, deps) {
+        const relativePath = path.relative(this.basePath, filePath);
         const extension = path.extname(filePath).substring(1);
 
-        let section = `### File: ${filePath}\n\n`;
-        section += '<component_analysis>\n';
+        let section = `### File: ${relativePath}\n\n`;
+        section += '<file_analysis>\n';
         
-        // Add file purpose and role
+        // Add file purpose
         section += await this.inferFilePurpose(filePath, analysis);
         
-        // Add dependencies information
+        // Add dependencies
         if (deps && deps.dependencies.length > 0) {
             section += '\nDependencies:\n';
             section += deps.dependencies.map(d => `- ${d}`).join('\n') + '\n';
         }
 
-        // Add exports information
+        // Add exports
         if (analysis.exports && analysis.exports.length > 0) {
             section += '\nExports:\n';
             section += analysis.exports.map(e => `- ${e.type}: ${e.name}`).join('\n') + '\n';
         }
 
-        // Add interfaces/types for TypeScript files
+        // Add interfaces/types for TypeScript
         if (analysis.interfaces) {
             section += '\nInterfaces:\n';
             section += analysis.interfaces.map(i => `- ${i.name}`).join('\n') + '\n';
         }
 
-        // Add functions/classes information with descriptions
+        // Add functions/classes
         if (analysis.functions && analysis.functions.length > 0) {
-            section += '\nKey Functions:\n';
+            section += '\nFunctions:\n';
             section += analysis.functions.map(f => {
                 const params = f.params.join(', ');
                 return `- ${f.name}(${params})${f.async ? ' [async]' : ''}`;
@@ -191,14 +195,14 @@ ${await this.analyzeKeyDependencies(dependencyGraph)}
             }).join('\n') + '\n';
         }
 
-        section += '</component_analysis>\n\n';
+        section += '</file_analysis>\n\n';
 
-        // Add the actual code with language marker
-        section += '<component_code>\n';
+        // Add the actual code
+        section += '<file_code>\n';
         section += '```' + extension + '\n';
-        section += fileContent;
+        section += analysis.content;
         section += '\n```\n';
-        section += '</component_code>\n';
+        section += '</file_code>\n\n';
 
         return section;
     }
@@ -228,82 +232,18 @@ ${await this.analyzeKeyDependencies(dependencyGraph)}
         return purpose + '\n';
     }
 
-    shouldIgnore(name) {
-        const ignorePatterns = [
-            'node_modules', '.git', 'build', 'dist',
-            /^\..+/, // Hidden files and directories
-            /\.(log|pid|lock)$/
-        ];
-
-        return ignorePatterns.some(pattern => 
-            pattern instanceof RegExp ? 
-                pattern.test(name) : 
-                name === pattern
-        );
-    }
-
-    async findEntryPoints() {
-        const entryPatterns = [
-            'index.js', 'main.js', 'app.js',
-            'index.ts', 'main.ts', 'app.ts',
-            'package.json'
-        ];
-
-        const entryPoints = [];
+    groupFilesByDirectory(files) {
+        const groups = new Map();
         
-        try {
-            const files = await this.scanDirectory(this.basePath);
-            for (const file of files) {
-                const basename = path.basename(file);
-                if (entryPatterns.includes(basename)) {
-                    entryPoints.push(path.relative(this.basePath, file));
-                }
+        for (const file of files) {
+            const directory = path.dirname(file);
+            if (!groups.has(directory)) {
+                groups.set(directory, []);
             }
-        } catch (error) {
-            console.warn(chalk.yellow('Warning: Error finding entry points:'), error);
+            groups.get(directory).push(file);
         }
 
-        return entryPoints;
-    }
-
-    async scanDirectory(dir) {
-        const results = [];
-        try {
-            const entries = await fs.readdir(dir, { withFileTypes: true });
-
-            for (const entry of entries) {
-                if (this.shouldIgnore(entry.name)) continue;
-
-                const fullPath = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                    results.push(...await this.scanDirectory(fullPath));
-                } else {
-                    results.push(fullPath);
-                }
-            }
-        } catch (error) {
-            console.warn(chalk.yellow(`Warning: Error scanning directory ${dir}:`), error);
-        }
-
-        return results;
-    }
-
-    async detectLanguages() {
-        const extensions = new Set();
-        
-        try {
-            const files = await this.scanDirectory(this.basePath);
-            for (const file of files) {
-                const ext = path.extname(file);
-                if (ext) {
-                    extensions.add(ext.substring(1));
-                }
-            }
-        } catch (error) {
-            console.warn(chalk.yellow('Warning: Error detecting languages:'), error);
-        }
-
-        return Array.from(extensions);
+        return groups;
     }
 
     async identifyMainComponents(analyses) {
@@ -311,7 +251,7 @@ ${await this.analyzeKeyDependencies(dependencyGraph)}
 
         if (!analyses) return [];
 
-        for (const [file, analysis] of analyses.entries()) {
+        for (const analysis of analyses.values()) {
             if (analysis.exports && analysis.exports.length > 0) {
                 for (const exp of analysis.exports) {
                     const score = componentScores.get(exp.name) || 0;
@@ -333,65 +273,51 @@ ${await this.analyzeKeyDependencies(dependencyGraph)}
         const flows = [];
         const visited = new Set();
 
-        try {
-            for (const [file, deps] of dependencyGraph.entries()) {
-                if (!visited.has(file)) {
-                    const chain = await this.findLongestDependencyChain(file, dependencyGraph, new Set());
-                    if (chain.length > 1) {
-                        flows.push(`${chain.map(f => path.basename(f)).join(' → ')}`);
-                    }
-                    chain.forEach(f => visited.add(f));
+        for (const [file, _] of dependencyGraph.entries()) {
+            if (!visited.has(file)) {
+                const chain = await this.findLongestDependencyChain(file, dependencyGraph, new Set());
+                if (chain.length > 1) {
+                    flows.push(`${chain.map(f => path.basename(f)).join(' → ')}`);
                 }
+                chain.forEach(f => visited.add(f));
             }
-        } catch (error) {
-            console.warn(chalk.yellow('Warning: Error analyzing data flows:'), error);
         }
 
-        return flows.slice(0, 5); // Return top 5 flows for clarity
+        return flows.slice(0, 5); // Return top 5 flows
     }
 
     async findLongestDependencyChain(file, graph, visited) {
         if (visited.has(file)) return [];
         visited.add(file);
 
-        try {
-            const deps = graph.get(file)?.dependencies || [];
-            let longestChain = [file];
+        const deps = graph.get(file)?.dependencies || [];
+        let longestChain = [file];
 
-            for (const dep of deps) {
-                const chain = await this.findLongestDependencyChain(dep, graph, new Set(visited));
-                if (chain.length + 1 > longestChain.length) {
-                    longestChain = [file, ...chain];
-                }
+        for (const dep of deps) {
+            const chain = await this.findLongestDependencyChain(dep, graph, new Set(visited));
+            if (chain.length + 1 > longestChain.length) {
+                longestChain = [file, ...chain];
             }
-
-            return longestChain;
-        } catch (error) {
-            console.warn(chalk.yellow(`Warning: Error finding dependency chain for ${file}:`), error);
-            return [file];
         }
+
+        return longestChain;
     }
 
     async analyzeKeyDependencies(dependencyGraph) {
         const dependencyCounts = new Map();
 
-        try {
-            for (const [_, deps] of dependencyGraph.entries()) {
-                for (const dep of deps.dependencies) {
-                    const count = dependencyCounts.get(dep) || 0;
-                    dependencyCounts.set(dep, count + 1);
-                }
+        for (const [_, deps] of dependencyGraph.entries()) {
+            for (const dep of deps.dependencies) {
+                const count = dependencyCounts.get(dep) || 0;
+                dependencyCounts.set(dep, count + 1);
             }
-
-            return Array.from(dependencyCounts.entries())
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 5)
-                .map(([dep, count]) => `- ${dep}: Referenced ${count} times`)
-                .join('\n');
-        } catch (error) {
-            console.warn(chalk.yellow('Warning: Error analyzing key dependencies:'), error);
-            return 'No dependency information available';
         }
+
+        return Array.from(dependencyCounts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([dep, count]) => `- ${dep}: Referenced ${count} times`)
+            .join('\n');
     }
 }
 
