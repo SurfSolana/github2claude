@@ -24,10 +24,10 @@ This tool is designed to:
 
 ```bash
 # Clone the repository
-git clone https://github.com/SurfSolana/github-to-claude.git
+git clone https://github.com/SurfSolana/github2claude.git
 
 # Enter the directory
-cd github-to-claude
+cd github2claude
 
 # Install dependencies
 pnpm i
@@ -38,16 +38,21 @@ npm link
 
 ## Usage
 
+To use the tool, provide the GitHub repository URL as a command line argument:
+
 ```bash
-github2claude https://github.com/username/repository
+npx github2claude https://github.com/username/repository 
 ```
 
-The tool will:
-1. Clone the specified repository
+The tool will:  
+1. Clone the specified repository to a temporary directory
 2. Analyze its structure
-3. Generate markdown files in the `claude-docs` directory
+3. Generate markdown files in a `g2c__username-repository/version` directory
+   in your current working directory  
 
-## Output Format
+For example, running `npx github2claude https://github.com/SurfSolana/github2claude` will generate a documentation directory named something like `g2c__SurfSolana-github2claude/1.0.0`.
+
+## Output Format  
 
 The generated markdown includes:
 - Repository metadata
