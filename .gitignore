@@ -2,3 +2,4 @@
 node_modules/
 output/
 pnpm-lock.yaml
+claude-docs/

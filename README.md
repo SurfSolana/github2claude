@@ -31,18 +31,21 @@ cd github-to-claude
 
 # Install dependencies
 pnpm i
+
+# global usage
+npm link
 ```
 
 ## Usage
 
 ```bash
-node index.js https://github.com/username/repository
+github2claude https://github.com/username/repository
 ```
 
 The tool will:
 1. Clone the specified repository
 2. Analyze its structure
-3. Generate a markdown file in the `output` directory
+3. Generate markdown files in the `claude-docs` directory
 
 ## Output Format
 
