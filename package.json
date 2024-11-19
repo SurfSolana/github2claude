@@ -1,6 +1,6 @@
 {
   "name": "github2claude",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Generate LLM-optimized markdown documentation from GitHub repositories for use with Claude AI",
   "type": "module",
   "main": "src/index.js",
