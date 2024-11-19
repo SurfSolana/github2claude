@@ -28,7 +28,8 @@ const config = {
   ],
   excludePatterns: [
     'node_modules', 'dist', 'build', 'coverage', '.git',
-    '*.min.js', '*.bundle.js', '*.test.js', '*.spec.js'
+    '*.min.js', '*.bundle.js', '*.test.js', '*.spec.js',
+    'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb'
   ],
   maxFileSize: 12000, // Characters per markdown file
   sectionsPerFile: 5, // Maximum number of code sections per file
