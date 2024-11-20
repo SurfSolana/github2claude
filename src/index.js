@@ -4,7 +4,8 @@ import {
 } from 'url';
 import {
   dirname,
-  join
+  join,
+  relative
 } from 'path';
 import fs from 'fs/promises';
 import simpleGit from 'simple-git';
@@ -16,11 +17,37 @@ import progress from './progress-util.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+function globToRegExp(pattern) {
+  if (pattern.startsWith('**/')) {
+    // Handle **/ pattern (match any directory depth or none)
+    const filename = pattern.slice(3);
+    return new RegExp(`^(.*/)?${filename.replace(/\./g, '\\.').replace(/\*/g, '[^/]*')}$`);
+  } else if (pattern.includes('*')) {
+    // Handle simple * wildcards
+    return new RegExp(`^${pattern.replace(/\./g, '\\.').replace(/\*/g, '[^/]*')}$`);
+  } else {
+    // Handle literal matches
+    return new RegExp(`^${pattern}$`);
+  }
+}
+
+function matchesGlobPattern(path, pattern) {
+  const regex = globToRegExp(pattern);
+  const matches = regex.test(path);
+  
+  // Only log lock file matches for debugging
+  // if (path.includes('lock') || path.includes('package-lock')) {
+  //   console.log(`Lock file check - Path: ${path}, Pattern: ${regex}, Matches: ${matches}`);
+  // }
+  
+  return matches;
+}
+
 // Configuration
 const config = {
-  tempDir: 'temp', // Will be relative to current working directory
-  outputDir: '.', // Current directory
-  markdownDir: 'claude-docs', // Subdirectory for markdown files
+  tempDir: 'temp',
+  outputDir: '.',
+  markdownDir: 'claude-docs',
   textFileExtensions: [
     '.js', '.jsx', '.ts', '.tsx', '.md', '.txt', '.json',
     '.yml', '.yaml', '.css', '.scss', '.html', '.vue',
@@ -30,13 +57,76 @@ const config = {
     'node_modules', 'dist', 'build', 'coverage', '.git',
     '*.min.js', '*.bundle.js', '*.test.js', '*.spec.js',
     '**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml', '**/bun.lockb',
-    '**/yarn.lock', '**/Cargo.lock', '**/Gemfile.lock', '**/composer.lock',
-    '**/poetry.lock', '**/mix.lock', '**/paket.lock', '**/packages.lock.json',
+    '**/Cargo.lock', '**/Gemfile.lock', '**/composer.lock', '**/poetry.lock',
+    '**/mix.lock', '**/paket.lock', '**/packages.lock.json',
     '**/shrinkwrap.yaml', '**/flake.lock', '**/pnpm-workspace.yaml'
   ],
-  maxFileSize: 12000, // Characters per markdown file
-  sectionsPerFile: 5, // Maximum number of code sections per file
+  maxFileSize: 12000,
+  sectionsPerFile: 5,
 };
+
+async function scanDirectory(dir) {
+  const files = await fs.readdir(dir, {
+    withFileTypes: true
+  });
+  const results = [];
+
+  for (const file of files) {
+    const fullPath = join(dir, file.name);
+    const relativePath = relative(dir, fullPath);
+    
+    // Only log if it's a lock file
+    // if (file.name.includes('lock') || file.name.includes('package-lock')) {
+    //   console.log(`\nProcessing lock file: ${relativePath}`);
+    // }
+    
+    // For lock files, first check against lock file patterns
+    const isLockFile = file.name.includes('lock') || file.name.includes('package-lock');
+    let shouldExclude = false;
+
+    if (isLockFile) {
+      // Check only against lock file patterns first
+      const lockPatterns = config.excludePatterns.filter(p => 
+        p.includes('lock') || p.includes('package-lock')
+      );
+      shouldExclude = lockPatterns.some(pattern => 
+        matchesGlobPattern(file.name, pattern) || 
+        matchesGlobPattern(relativePath, pattern)
+      );
+    }
+
+    // If not excluded yet and not a lock file, check other patterns
+    if (!shouldExclude && !isLockFile) {
+      const otherPatterns = config.excludePatterns.filter(p => 
+        !p.includes('lock') && !p.includes('package-lock')
+      );
+      shouldExclude = otherPatterns.some(pattern => 
+        matchesGlobPattern(file.name, pattern) || 
+        matchesGlobPattern(relativePath, pattern)
+      );
+    }
+
+    // if (isLockFile) {
+    //   console.log(`Exclude decision: ${shouldExclude ? 'YES' : 'NO'}`);
+    // }
+
+    if (file.isDirectory()) {
+      if (!shouldExclude) {
+        results.push(...await scanDirectory(fullPath));
+      }
+    } else if (!shouldExclude && config.textFileExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
+      if (isLockFile) {
+        console.log(`Adding to results: ${fullPath}`);
+      }
+      results.push(fullPath);
+    }
+  }
+
+  return results;
+}
+
+
+
 
 function extractRepoInfo(url) {
   const parts = url.split('/');
@@ -145,26 +235,6 @@ export async function executeCodeAnalysis(repoUrl) {
       progress.warn('Cleanup failed');
     }
   }
-}
-
-async function scanDirectory(dir) {
-  const files = await fs.readdir(dir, {
-    withFileTypes: true
-  });
-  const results = [];
-
-  for (const file of files) {
-    const fullPath = join(dir, file.name);
-    if (file.isDirectory()) {
-      if (!config.excludePatterns.includes(file.name)) {
-        results.push(...await scanDirectory(fullPath));
-      }
-    } else if (config.textFileExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
-      results.push(fullPath);
-    }
-  }
-
-  return results;
 }
 
 async function generateMarkdownFiles(files, repoName, tempPath, outputPath, info) {
