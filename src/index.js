@@ -29,7 +29,10 @@ const config = {
   excludePatterns: [
     'node_modules', 'dist', 'build', 'coverage', '.git',
     '*.min.js', '*.bundle.js', '*.test.js', '*.spec.js',
-    'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb'
+    '**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml', '**/bun.lockb',
+    '**/yarn.lock', '**/Cargo.lock', '**/Gemfile.lock', '**/composer.lock',
+    '**/poetry.lock', '**/mix.lock', '**/paket.lock', '**/packages.lock.json',
+    '**/shrinkwrap.yaml', '**/flake.lock', '**/pnpm-workspace.yaml'
   ],
   maxFileSize: 12000, // Characters per markdown file
   sectionsPerFile: 5, // Maximum number of code sections per file
